@@ -1,0 +1,11 @@
+[project]
+name = "gpt-2"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "black>=25.1.0",
+    "loguru>=0.7.3",
+    "numpy>=2.2.3",
+    "torch>=2.6.0",
+]
