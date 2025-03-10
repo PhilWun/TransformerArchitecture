@@ -72,20 +72,20 @@ def scaled_dot_product_attention(
 
 class MultiHeadAttention(nn.Module):
     def __init__(
-        self, heads_count: int, model_size: int, key_size: int, value_size: int
+        self, heads_count: int, model_size: int, key_size: int, value_size: int, device: str, dtype: torch.dtype
     ):
         super().__init__()
         self.heads_count = heads_count
 
-        self.query_projections = []
-        self.key_projections = []
-        self.value_projections = []
-        self.output_projection = nn.Linear(heads_count * value_size, model_size)
+        self.query_projections = nn.ModuleList()
+        self.key_projections = nn.ModuleList()
+        self.value_projections = nn.ModuleList()
+        self.output_projection = nn.Linear(heads_count * value_size, model_size, device=device, dtype=dtype)
 
         for _ in range(heads_count):
-            self.query_projections.append(nn.Linear(model_size, key_size, bias=False))
-            self.key_projections.append(nn.Linear(model_size, key_size, bias=False))
-            self.value_projections.append(nn.Linear(model_size, value_size, bias=False))
+            self.query_projections.append(nn.Linear(model_size, key_size, bias=False, device=device, dtype=dtype))
+            self.key_projections.append(nn.Linear(model_size, key_size, bias=False, device=device, dtype=dtype))
+            self.value_projections.append(nn.Linear(model_size, value_size, bias=False, device=device, dtype=dtype))
 
     def forward(
         self,
@@ -122,27 +122,29 @@ class MultiHeadAttention(nn.Module):
 
 
 class PositionWiseFeedForward(nn.Module):
-    def __init__(self, model_size: int, inner_size: int):
+    def __init__(self, model_size: int, inner_size: int, device: str, dtype: torch.dtype):
         super().__init__()
 
-        self.first_linear = nn.Linear(model_size, inner_size)
-        self.second_linear = nn.Linear(inner_size, model_size)
+        self.first_linear = nn.Linear(model_size, inner_size, device=device, dtype=dtype)
+        self.second_linear = nn.Linear(inner_size, model_size, device=device, dtype=dtype)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.second_linear(nn.ReLU()(self.first_linear(x)))
 
 
-def create_positional_embedding(sequence_length: int, model_size: int) -> torch.Tensor:
+def create_positional_embedding(sequence_length: int, model_size: int, device: str, dtype: torch.dtype) -> torch.Tensor:
     """
     :param sequence_length:
     :param model_size:
+    :param device:
+    :param dtype:
 
     :return: [sequence length, model size]
     """
-    positions = torch.arange(sequence_length).reshape((sequence_length, 1))
-    dimensions = torch.arange(model_size).reshape((1, model_size))
+    positions = torch.arange(sequence_length, device=device, dtype=dtype).reshape((sequence_length, 1))
+    dimensions = torch.arange(model_size, device=device, dtype=dtype).reshape((1, model_size))
 
-    uneven_mask = torch.arange(model_size) % 2 == 1
+    uneven_mask = torch.arange(model_size, device=device, dtype=dtype) % 2 == 1
 
     pos_emb = torch.sin(positions / (10000 ** (2 * dimensions / model_size)))
     pos_emb_cos = torch.cos(positions / (10000 ** (2 * dimensions / model_size)))
@@ -154,23 +156,25 @@ def create_positional_embedding(sequence_length: int, model_size: int) -> torch.
     return pos_emb
 
 
-def create_attention_mask(sequence_length: int) -> torch.Tensor:
+def create_attention_mask(sequence_length: int, device: str) -> torch.Tensor:
     """
     Creates the mask tensor for the masked multi-head attention. It's a matrix where the diagonal and lower triangle are
     set to true and the rest to false.
 
     :param sequence_length:
+    :param device:
+
     :return: mask, shape=[sequence length, sequence length]
     """
-    return torch.tril(torch.ones((sequence_length, sequence_length), dtype=torch.bool))
+    return torch.tril(torch.ones((sequence_length, sequence_length), device=device, dtype=torch.bool))
 
 
 class Embedding(nn.Module):
-    def __init__(self, dictionary_size: int, model_size: int) -> None:
+    def __init__(self, dictionary_size: int, model_size: int, device: str, dtype: torch.dtype) -> None:
         super().__init__()
 
         self.model_size = model_size
-        self.embeddings = nn.Parameter(torch.randn(dictionary_size, model_size))
+        self.embeddings = nn.Parameter(torch.randn(dictionary_size, model_size, device=device, dtype=dtype))
 
     def forward(self, token_indices: torch.Tensor) -> torch.Tensor:
         """
@@ -208,13 +212,15 @@ class EncoderBlock(nn.Module):
         key_size: int,
         value_size: int,
         inner_size: int,
+        device: str,
+        dtype: torch.dtype,
     ) -> None:
         super().__init__()
 
-        self.mha = MultiHeadAttention(heads_count, model_size, key_size, value_size)
-        self.ff = PositionWiseFeedForward(model_size, inner_size)
-        self.norm1 = nn.LayerNorm(model_size)
-        self.norm2 = nn.LayerNorm(model_size)
+        self.mha = MultiHeadAttention(heads_count, model_size, key_size, value_size, device, dtype)
+        self.ff = PositionWiseFeedForward(model_size, inner_size, device, dtype)
+        self.norm1 = nn.LayerNorm(model_size, device=device, dtype=dtype)
+        self.norm2 = nn.LayerNorm(model_size, device=device, dtype=dtype)
 
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
         """
@@ -241,17 +247,19 @@ class DecoderBlock(nn.Module):
         key_size: int,
         value_size: int,
         inner_size: int,
+        device: str,
+        dtype: torch.dtype,
     ):
         super().__init__()
 
-        self.mmha = MultiHeadAttention(heads_count, model_size, key_size, value_size)
-        self.norm1 = nn.LayerNorm(model_size)
+        self.mmha = MultiHeadAttention(heads_count, model_size, key_size, value_size, device, dtype)
+        self.norm1 = nn.LayerNorm(model_size, device=device, dtype=dtype)
 
-        self.mha = MultiHeadAttention(heads_count, model_size, key_size, value_size)
-        self.norm2 = nn.LayerNorm(model_size)
+        self.mha = MultiHeadAttention(heads_count, model_size, key_size, value_size, device, dtype)
+        self.norm2 = nn.LayerNorm(model_size, device=device, dtype=dtype)
 
-        self.ff = PositionWiseFeedForward(model_size, inner_size)
-        self.norm3 = nn.LayerNorm(model_size)
+        self.ff = PositionWiseFeedForward(model_size, inner_size, device, dtype)
+        self.norm3 = nn.LayerNorm(model_size, device=device, dtype=dtype)
 
     def forward(
         self,
@@ -296,23 +304,27 @@ class Transformer(nn.Module):
         value_size: int,
         inner_size: int,
         dictionary_size: int,
+        device: str,
+        dtype: torch.dtype,
     ) -> None:
         super().__init__()
         self.model_size = model_size
+        self.device = device
+        self.dtype = dtype
 
         self.encoder_blocks = nn.ModuleList(
             [
-                EncoderBlock(heads_count, model_size, key_size, value_size, inner_size)
+                EncoderBlock(heads_count, model_size, key_size, value_size, inner_size, device, dtype)
                 for _ in range(block_count)
             ]
         )
         self.decoder_blocks = nn.ModuleList(
             [
-                DecoderBlock(heads_count, model_size, key_size, value_size, inner_size)
+                DecoderBlock(heads_count, model_size, key_size, value_size, inner_size, device, dtype)
                 for _ in range(block_count)
             ]
         )
-        self.embedding_layer = Embedding(dictionary_size, model_size)
+        self.embedding_layer = Embedding(dictionary_size, model_size, device, dtype)
         self.output_layer = OutputPredictor(self.embedding_layer.embeddings)
 
     def forward(
@@ -329,7 +341,7 @@ class Transformer(nn.Module):
         # shape=[batch size, input sequence length, model size]
         input_embeddings: torch.Tensor = self.embedding_layer(input_tokens)
         input_embeddings += create_positional_embedding(
-            input_sequence_length, self.model_size
+            input_sequence_length, self.model_size, self.device, dtype=self.dtype
         )
 
         # encoder stack
@@ -343,7 +355,7 @@ class Transformer(nn.Module):
         # shape=[batch size, output sequence length, model size]
         output_embeddings = self.embedding_layer(output_tokens)
         output_embeddings += create_positional_embedding(
-            output_sequence_length, self.model_size
+            output_sequence_length, self.model_size, self.device, self.dtype
         )
 
         # decoder stack
@@ -353,7 +365,7 @@ class Transformer(nn.Module):
             output_sequence_length,
         )
         # shape=[batch size, output sequence length, output sequence length]
-        attention_mask = create_attention_mask(output_sequence_length).expand(
+        attention_mask = create_attention_mask(output_sequence_length, self.device).expand(
             mask_shape
         )
 
@@ -380,15 +392,22 @@ def transformer_test():
     output_sequence_length = 23
     batch_size = 29
 
-    transformer = Transformer(block_count, heads_count, model_size, key_size, value_size, inner_size, dictionary_size)
+    device = get_device()
+    dtype = torch.bfloat16
 
-    input_tokens = torch.randint(0, dictionary_size, (batch_size, input_sequence_length), dtype=torch.int32)
-    output_tokens = torch.randint(0, dictionary_size, (batch_size, output_sequence_length), dtype=torch.int32)
+    transformer = Transformer(block_count, heads_count, model_size, key_size, value_size, inner_size, dictionary_size, device, dtype)
 
-    token_probabilities = transformer(input_tokens, output_tokens)
+    input_tokens = torch.randint(0, dictionary_size, (batch_size, input_sequence_length), dtype=torch.int32, device=device)
+    output_tokens = torch.randint(0, dictionary_size, (batch_size, output_sequence_length), dtype=torch.int32, device=device)
+
+    token_probabilities: torch.Tensor = transformer(input_tokens, output_tokens)
+    print(token_probabilities.dtype)
     print(token_probabilities.shape)
     next_token_probabilities = token_probabilities[:, -1, :]
     print(next_token_probabilities)
+
+    for parameter in transformer.parameters():
+        print(parameter.dtype, parameter.device)
 
 
 if __name__ == "__main__":
