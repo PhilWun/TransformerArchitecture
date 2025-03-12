@@ -178,11 +178,10 @@ class Embedding(nn.Module):
 
     def forward(self, token_indices: torch.Tensor) -> torch.Tensor:
         """
-
-        :param token_indices: dtype=int32, shape=[*]
+        :param token_indices: dtype=long, shape=[*]
         :return: embeddings: [*, model_size]
         """
-        assert token_indices.dtype == torch.int32
+        assert token_indices.dtype == torch.long
 
         return self.embeddings[token_indices, :] * math.sqrt(self.model_size)
 
@@ -193,15 +192,20 @@ class OutputPredictor(nn.Module):
 
         self.embeddings = embeddings
 
-    def forward(self, output_embeddings: torch.Tensor) -> torch.Tensor:
+    def forward(self, output_embeddings: torch.Tensor, output_logits: bool = False) -> torch.Tensor:
         """
         :param output_embeddings: [*, model_size]
+        :param output_logits: boolean, if true the output are logits instead of probabilities
+
         :return: [*, dictionary size]
         """
 
         logits = output_embeddings.matmul(self.embeddings.transpose(0, 1))
 
-        return nn.functional.softmax(logits, dim=-1)
+        if output_logits:
+            return logits
+        else:
+            return nn.functional.softmax(logits, dim=-1)
 
 
 class EncoderBlock(nn.Module):
@@ -328,12 +332,14 @@ class Transformer(nn.Module):
         self.output_layer = OutputPredictor(self.embedding_layer.embeddings)
 
     def forward(
-        self, input_tokens: torch.Tensor, output_tokens: torch.Tensor
+        self, input_tokens: torch.Tensor, output_tokens: torch.Tensor, output_logits: bool = False
     ) -> torch.Tensor:
         """
 
-        :param input_tokens: dtype=int32, shape=[batch size, input sequence length]
-        :param output_tokens: dtype=int32, shape=[batch size, output sequence length]
+        :param input_tokens: dtype=long, shape=[batch size, input sequence length]
+        :param output_tokens: dtype=long, shape=[batch size, output sequence length]
+        :param output_logits: boolean, if true the output are logits instead of probabilities
+
         :return: output token probabilities: [batch size, dictionary size]
         """
         # input token processing
@@ -375,39 +381,49 @@ class Transformer(nn.Module):
             )
 
         # output layers
-        predictions = self.output_layer(decoder_block_output)
+        predictions = self.output_layer(decoder_block_output, output_logits)
 
         return predictions
 
 
 def transformer_test():
     block_count = 2
-    heads_count = 3
-    model_size = 5
-    key_size = 7
-    value_size = 11
-    inner_size = 13
-    dictionary_size = 17
-    input_sequence_length = 19
-    output_sequence_length = 23
-    batch_size = 29
+    heads_count = 8
+    model_size = 64
+    key_size = 8
+    value_size = 8
+    inner_size = 256
+    dictionary_size = 16
+    input_sequence_length = 8
+    target_sequence_length = 8
+    batch_size = 8
 
     device = get_device()
     dtype = torch.bfloat16
 
     transformer = Transformer(block_count, heads_count, model_size, key_size, value_size, inner_size, dictionary_size, device, dtype)
 
-    input_tokens = torch.randint(0, dictionary_size, (batch_size, input_sequence_length), dtype=torch.int32, device=device)
-    output_tokens = torch.randint(0, dictionary_size, (batch_size, output_sequence_length), dtype=torch.int32, device=device)
+    # token with ID 0 is the output padding token and is not used otherwise
+    input_tokens = torch.randint(1, dictionary_size, (batch_size, input_sequence_length), dtype=torch.long, device=device)
+    # length + 1 because we add the output padding token to the front
+    target_tokens = torch.randint(1, dictionary_size, (batch_size, target_sequence_length + 1), dtype=torch.long, device=device)
+    target_tokens[:, 0] = 0  # sets the first token to the output padding token
 
-    token_probabilities: torch.Tensor = transformer(input_tokens, output_tokens)
-    print(token_probabilities.dtype)
-    print(token_probabilities.shape)
-    next_token_probabilities = token_probabilities[:, -1, :]
-    print(next_token_probabilities)
+    loss_fn = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(transformer.parameters(), lr=0.002)
 
-    for parameter in transformer.parameters():
-        print(parameter.dtype, parameter.device)
+    for i in range(10000):
+        # uses the padded target tokens without the last token as the "output" that is used as input to the decoder stack
+        output_logits: torch.Tensor = transformer(input_tokens, target_tokens[:, 0:-1], output_logits=True)
+        # uses all the target tokens, without the padding token at the beginning, as targets
+        loss = loss_fn(output_logits.transpose(1, 2), target_tokens[:, 1:])
+
+        if i % 100 == 0:
+            logger.info(f"loss: {loss.item()}")
+
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
 
 
 if __name__ == "__main__":
