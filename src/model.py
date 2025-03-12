@@ -29,28 +29,27 @@ def scaled_dot_product_attention(
     # dot-product over all queries and key at once (matrix multiplication) to calculate the compatibility of each query
     # with each key
     # output shape: [batch size, query count, key count]
-    output = torch.matmul(
+    compatibility = torch.matmul(
         queries,
         torch.transpose(keys, 1, 2),
     )
 
     # scaling to avoid large dot products when the key size is large
     key_size = keys.shape[2]
-    output = math.sqrt(key_size) * output
-    test: torch.Tensor
+    compatibility = (1.0 / math.sqrt(key_size)) * compatibility
 
     if masks is not None:
         # set prohibited connections to negative infinity which results in a compatibility of 0 after softmax
-        output[masks.logical_not()] = float("-inf")
+        compatibility[masks.logical_not()] = float("-inf")
 
-    # for each query calculates the final compatibility for every key
-    output = nn.Softmax(dim=2)(output)
+    # for each query calculates the final weights for every key
+    weights = nn.Softmax(dim=2)(compatibility)
 
     # calculates the results of each query (weighted sum of values)
     # output shape: [batch size, query count, value size]
-    output = torch.matmul(output, values)
+    result = torch.matmul(weights, values)
 
-    return output
+    return result
 
 
 class MultiHeadAttention(nn.Module):
