@@ -36,12 +36,34 @@ def transformer_training():
     device = get_device()
     dtype = torch.bfloat16
 
-    transformer = Transformer(block_count, heads_count, model_size, key_size, value_size, inner_size, dictionary_size, device, dtype)
+    transformer = Transformer(
+        block_count,
+        heads_count,
+        model_size,
+        key_size,
+        value_size,
+        inner_size,
+        dictionary_size,
+        device,
+        dtype,
+    )
 
     # token with ID 0 is the output padding token and is not used otherwise
-    input_tokens = torch.randint(1, dictionary_size, (batch_size, input_sequence_length), dtype=torch.long, device=device)
+    input_tokens = torch.randint(
+        1,
+        dictionary_size,
+        (batch_size, input_sequence_length),
+        dtype=torch.long,
+        device=device,
+    )
     # length + 1 because we add the output padding token to the front
-    target_tokens = torch.randint(1, dictionary_size, (batch_size, target_sequence_length + 1), dtype=torch.long, device=device)
+    target_tokens = torch.randint(
+        1,
+        dictionary_size,
+        (batch_size, target_sequence_length + 1),
+        dtype=torch.long,
+        device=device,
+    )
     target_tokens[:, 0] = 0  # sets the first token to the output padding token
 
     loss_fn = nn.CrossEntropyLoss()
@@ -49,7 +71,9 @@ def transformer_training():
 
     for i in range(10000):
         # uses the padded target tokens without the last token as the "output" that is used as input to the decoder stack
-        output_logits: torch.Tensor = transformer(input_tokens, target_tokens[:, 0:-1], output_logits=True)
+        output_logits: torch.Tensor = transformer(
+            input_tokens, target_tokens[:, 0:-1], output_logits=True
+        )
         # uses all the target tokens, without the padding token at the beginning, as targets
         loss = loss_fn(output_logits.transpose(1, 2), target_tokens[:, 1:])
 
