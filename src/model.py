@@ -188,9 +188,16 @@ class Embedding(nn.Module):
         super().__init__()
 
         self.model_size = model_size
-        self.embeddings = nn.Parameter(
-            torch.randn(dictionary_size, model_size, device=device, dtype=dtype)
+        variance = 1.0 / model_size
+
+        initial_embeddings = torch.rand(
+            (dictionary_size, model_size), device=device, dtype=dtype
         )
+        initial_embeddings -= torch.mean(initial_embeddings)
+        initial_embeddings *= 1.0 / torch.std(initial_embeddings)
+        initial_embeddings *= math.sqrt(variance)
+
+        self.embeddings = nn.Parameter(initial_embeddings)
 
     def forward(self, token_indices: torch.Tensor) -> torch.Tensor:
         """
@@ -206,6 +213,7 @@ class OutputPredictor(nn.Module):
     def __init__(self, embeddings: nn.Parameter) -> None:
         super().__init__()
 
+        # shape = [dictionary size, model size]
         self.embeddings = embeddings
 
     def forward(
