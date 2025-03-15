@@ -32,6 +32,7 @@ def transformer_training():
     input_sequence_length = 8
     target_sequence_length = 8
     batch_size = 8
+    learning_rate = 0.002
 
     device = get_device()
     dtype = torch.bfloat16
@@ -67,7 +68,8 @@ def transformer_training():
     target_tokens[:, 0] = 0  # sets the first token to the output padding token
 
     loss_fn = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(transformer.parameters(), lr=0.002)
+    optimizer = torch.optim.Adam(transformer.parameters(), lr=learning_rate)
+    transformer.train(True)
 
     for i in range(10000):
         # uses the padded target tokens without the last token as the "output" that is used as input to the decoder stack
