@@ -11,6 +11,12 @@ Install the dependencies with:
 uv sync
 ```
 
+## Run the example training script on random data
+
+```shell
+uv run -m src.main
+```
+
 # Transformer architecture in detail
 ## Overview
 ![transformer architecture overview](./img/transformer.svg)
