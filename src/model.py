@@ -190,6 +190,7 @@ class Embedding(nn.Module):
         self.model_size = model_size
         variance = 1.0 / model_size
 
+        # initializes the embeddings with uniform random values with a mean of 0 and a variance of 1 / model_size
         initial_embeddings = torch.rand(
             (dictionary_size, model_size), device=device, dtype=dtype
         )
