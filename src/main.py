@@ -22,17 +22,17 @@ def get_device() -> str:
 
 
 def transformer_training():
-    block_count = 2
+    block_count = 6
     heads_count = 8
-    model_size = 64
-    key_size = 8
-    value_size = 8
-    inner_size = 256
+    model_size = 512
+    key_size = 64
+    value_size = 64
+    inner_size = 2048
     dictionary_size = 16
     input_sequence_length = 8
     target_sequence_length = 8
     batch_size = 8
-    learning_rate = 0.002
+    learning_rate = 0.0002
 
     device = get_device()
     dtype = torch.bfloat16
@@ -71,7 +71,7 @@ def transformer_training():
     optimizer = torch.optim.Adam(transformer.parameters(), lr=learning_rate)
     transformer.train(True)
 
-    for i in range(10000):
+    for i in range(100):
         # uses the padded target tokens without the last token as the "output" that is used as input to the decoder stack
         output_logits: torch.Tensor = transformer(
             input_tokens, target_tokens[:, 0:-1], output_logits=True
@@ -79,8 +79,7 @@ def transformer_training():
         # uses all the target tokens, without the padding token at the beginning, as targets
         loss = loss_fn(output_logits.transpose(1, 2), target_tokens[:, 1:])
 
-        if i % 100 == 0:
-            logger.info(f"loss: {loss.item()}")
+        logger.info(f"loss: {loss.item()}")
 
         loss.backward()
         optimizer.step()
